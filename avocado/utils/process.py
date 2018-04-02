@@ -201,9 +201,9 @@ def kill_process_by_pattern(pattern):
     :param pattern: normally only matched against the process name
     """
     cmd = "pkill -f %s" % pattern
-    result = run(cmd, ignore_status=True)
+    result = run(cmd, ignore_status=True, allow_output_check='combined', universal_newlines=True)
     if result.exit_status:
-        logging.error("Failed to run '%s': %s", cmd, result)
+        logging.error("Failed to run '%s': %s", cmd, result.stderr)
     else:
         logging.info("Succeed to run '%s'.", cmd)
 
@@ -464,7 +464,7 @@ class SubProcess(object):
 
     def __init__(self, cmd, verbose=True, allow_output_check=None,
                  shell=False, env=None, sudo=False,
-                 ignore_bg_processes=False, encoding=None):
+                 ignore_bg_processes=False, encoding=None, universal_newlines=False):
         """
         Creates the subprocess object, stdout/err, reader threads and locks.
 
@@ -523,6 +523,7 @@ class SubProcess(object):
         else:
             self.cmd = cmd
         self.verbose = verbose
+        self.universal_newlines = universal_newlines
         if allow_output_check is None:
             allow_output_check = OUTPUT_CHECK_RECORD_MODE
         if allow_output_check is None:
@@ -711,8 +712,11 @@ class SubProcess(object):
         """
         self._init_subprocess()
         if self._combined_drainer is not None:
-            return self._combined_drainer.data.getvalue()
-        return self._stdout_drainer.data.getvalue()
+            output = self._combined_drainer.data.getvalue()
+        output = self._stdout_drainer.data.getvalue()
+        if self.universal_newlines and hasattr(output, 'decode'):
+            return output.decode('utf-8')
+        return output
 
     def get_stderr(self):
         """
@@ -723,8 +727,11 @@ class SubProcess(object):
         """
         self._init_subprocess()
         if self._combined_drainer is not None:
-            return ''
-        return self._stderr_drainer.data.getvalue()
+            output = b''
+        output = self._stderr_drainer.data.getvalue()
+        if self.universal_newlines and hasattr(output, 'decode'):
+            return output.decode('utf-8')
+        return output
 
     def terminate(self):
         """
@@ -1244,7 +1251,7 @@ def get_sub_process_klass(cmd, encoding=None):
 def run(cmd, timeout=None, verbose=True, ignore_status=False,
         allow_output_check=None, shell=False,
         env=None, sudo=False, ignore_bg_processes=False,
-        encoding=None):
+        encoding=None, universal_newlines=True):
     """
     Run a subprocess, returning a CmdResult object.
 
@@ -1303,7 +1310,7 @@ def run(cmd, timeout=None, verbose=True, ignore_status=False,
     sp = klass(cmd=cmd, verbose=verbose,
                allow_output_check=allow_output_check, shell=shell, env=env,
                sudo=sudo, ignore_bg_processes=ignore_bg_processes,
-               encoding=encoding)
+               encoding=encoding, universal_newlines=universal_newlines)
     cmd_result = sp.run(timeout=timeout)
     fail_condition = cmd_result.exit_status != 0 or cmd_result.interrupted
     if fail_condition and not ignore_status:
@@ -1371,7 +1378,7 @@ def system(cmd, timeout=None, verbose=True, ignore_status=False,
     cmd_result = run(cmd=cmd, timeout=timeout, verbose=verbose, ignore_status=ignore_status,
                      allow_output_check=allow_output_check, shell=shell, env=env,
                      sudo=sudo, ignore_bg_processes=ignore_bg_processes,
-                     encoding=encoding)
+                     encoding=encoding, universal_newlines=True)
     return cmd_result.exit_status
 
 
@@ -1439,10 +1446,10 @@ def system_output(cmd, timeout=None, verbose=True, ignore_status=False,
     cmd_result = run(cmd=cmd, timeout=timeout, verbose=verbose, ignore_status=ignore_status,
                      allow_output_check=allow_output_check, shell=shell, env=env,
                      sudo=sudo, ignore_bg_processes=ignore_bg_processes,
-                     encoding=encoding)
+                     encoding=encoding, universal_newlines=True)
     if strip_trail_nl:
-        return cmd_result.stdout.rstrip(b'\n\r')
-    return cmd_result.stdout
+        return cmd_result.stdout.rstrip('\n\r')
+    return cmd_result.stdout_text
 
 
 def getoutput(cmd, timeout=None, verbose=False, ignore_status=True,
@@ -1502,7 +1509,7 @@ def getoutput(cmd, timeout=None, verbose=False, ignore_status=True,
     return getstatusoutput(cmd=cmd, timeout=timeout, verbose=verbose,
                            ignore_status=ignore_status,
                            allow_output_check=allow_output_check, shell=shell, env=env,
-                           sudo=sudo, ignore_bg_processes=ignore_bg_processes)[1]
+                           sudo=sudo, ignore_bg_processes=ignore_bg_processes, universal_newlines=True)[1]
 
 
 def getstatusoutput(cmd, timeout=None, verbose=False, ignore_status=True,
@@ -1561,7 +1568,7 @@ def getstatusoutput(cmd, timeout=None, verbose=False, ignore_status=True,
     """
     cmd_result = run(cmd=cmd, timeout=timeout, verbose=verbose, ignore_status=ignore_status,
                      allow_output_check=allow_output_check, shell=shell, env=env,
-                     sudo=sudo, ignore_bg_processes=ignore_bg_processes)
+                     sudo=sudo, ignore_bg_processes=ignore_bg_processes, universal_newlines=True)
     text = cmd_result.stdout_text
     sts = cmd_result.exit_status
     if text[-1:] == '\n':
